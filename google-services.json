@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "102241877852",
+    "project_id": "noisehunterapp-b4986",
+    "storage_bucket": "noisehunterapp-b4986.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:102241877852:android:e3fd9187af15faa97c0b99",
+        "android_client_info": {
+          "package_name": "com.gold.noise.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBpiHiJwJ5VV7z77eWASVPUt3Xl5NPKb7c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
