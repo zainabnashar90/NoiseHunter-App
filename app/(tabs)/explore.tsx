@@ -7,7 +7,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { io } from 'socket.io-client';
 
-const SERVER_URL = 'https://aftermost-kiersten-uncautioned.ngrok-free.dev';
+const SERVER_URL = 'https://quitezone-backend.onrender.com';
 
 export default function ExploreScreen() {
   const [onlineDevices, setOnlineDevices] = useState<any[]>([]);
@@ -37,7 +37,6 @@ export default function ExploreScreen() {
     ).start();
 
     socket.current = io(SERVER_URL, {
-      extraHeaders: { 'ngrok-skip-browser-warning': 'true' },
       transports: ['websocket'],
     });
 

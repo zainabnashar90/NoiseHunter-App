@@ -5,31 +5,22 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "splash": {
       "image": "./assets/images/icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#0A0E14"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.gold.noise.app",
       "infoPlist": {
-        "UIBackgroundModes": ["audio", "location"],
-        "NSMicrophoneUsageDescription": "نحتاج للوصول إلى الميكروفون لرصد مستويات الضوضاء",
-        "NSLocationWhenInUseUsageDescription": "نحتاج للوصول إلى موقعك لعرض الخريطة وتحديد مصادر الضوضاء",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "نحتاج للوصول إلى موقعك في الخلفية لرصد الضوضاء المستمر"
+        "UIBackgroundModes": ["audio", "location", "fetch", "remote-notification"],
+        "NSMicrophoneUsageDescription": "نحتاج للوصول إلى الميكروفون لرصد مستويات الضوضاء"
       }
     },
     "android": {
-      "compileSdkVersion": 34,
-      "targetSdkVersion": 34,
-      "buildToolsVersion": "34.0.0",
       "package": "com.gold.noise.app",
-      "softwareKeyboardLayoutMode": "pan",
       "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
@@ -43,17 +34,28 @@
         "ACCESS_BACKGROUND_LOCATION",
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_MICROPHONE",
+        "FOREGROUND_SERVICE_LOCATION",
         "RECEIVE_BOOT_COMPLETED",
-        "VIBRATE",
-        "NOTIFICATIONS",
+        "WAKE_LOCK",
         "POST_NOTIFICATIONS"
-      ],
-      "intentFilters": [],
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      }
+      ]
     },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/adaptive-icon.png",
+          "color": "#00FFCC"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysPermission": "نحتاج للوصول لموقعك لرسم خريطة الضوضاء حتى عند إغلاق التطبيق."
+        }
+      ]
+ 
+    ],
     "extra": {
       "eas": {
         "projectId": "8f65106e-feea-46d1-a5af-2949c829e0e8"

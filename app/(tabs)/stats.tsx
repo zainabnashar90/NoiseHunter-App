@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, ActivityIndicator,
+  View, Text, StyleSheet, ScrollView, ActivityIndicator,TouchableOpacity,
   Dimensions, RefreshControl, DeviceEventEmitter
 } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
@@ -8,7 +8,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
-const SERVER_URL = 'https://aftermost-kiersten-uncautioned.ngrok-free.dev';
+const SERVER_URL = 'https://quitezone-backend.onrender.com';
 
 // ==========================================
 // ✅ دوال لتنسيق التاريخ والوقت محلياً
@@ -75,9 +75,7 @@ export default function CombinedStatsScreen() {
 
   const fetchStats = async () => {
     try {
-      const response = await fetch(`${SERVER_URL}/api/stats`, {
-        headers: { 'ngrok-skip-browser-warning': 'true' }
-      });
+     const response = await fetch(`${SERVER_URL}/api/stats`);
       const data = await response.json();
 
       if (data.success) {
@@ -209,17 +207,31 @@ export default function CombinedStatsScreen() {
         )}
       </View>
 
-      {/* سجل الرصد */}
+      /* سجل الرصد */
       <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border, marginBottom: 40 }]}>
-        <View style={styles.rowBetween}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>📋 سجل الرصد الأخير</Text>
-          <MaterialCommunityIcons name="history" size={20} color={theme.accent} />
-        </View>
+  <View style={styles.rowBetween}>
+       {/* جهة اليمين: العنوان */}
+    <Text style={[styles.sectionTitle, { color: theme.text }]}>📋 سجل الرصد الأخير</Text>
 
-        {history.length === 0 ? (
-          <Text style={[styles.emptyText, { color: theme.subText }]}>لا يوجد سجلات حالية..</Text>
-        ) : (
-          history.map((item, index) => (
+    {/* جهة اليسار: الزر التفاعلي بدلاً من السهم/الأيقونة الثابتة */}
+    <TouchableOpacity 
+      onPress={onRefresh} 
+      disabled={refreshing}
+      style={{ padding: 5 }} // لتسهيل الضغط
+    >
+      {refreshing ? (
+        <ActivityIndicator size="small" color={theme.accent} />
+      ) : (
+        // يمكنك استخدام أيقونة 'refresh' أو 'sync' لتعبر عن التحديث
+        <MaterialCommunityIcons name="refresh" size={24} color={theme.accent} />
+      )}
+    </TouchableOpacity>
+  </View>
+       
+  {history.length === 0 ? (
+    <Text style={[styles.emptyText, { color: theme.subText }]}>لا يوجد سجلات حالية..</Text>
+  ) : (
+    history.map((item, index) => (
             <View key={item.id ?? index} style={[styles.historyItem, { borderBottomColor: theme.border }]}>
               <View
                 style={[
