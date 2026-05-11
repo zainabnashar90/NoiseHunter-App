@@ -167,15 +167,24 @@ export default function HomeScreen() {
     { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#000000' }] } 
   ]; 
  
-  const analyzeSoundCategory = (db: number, buffer: number[]) => { 
-    if (db < 50) return 'طبيعي'; 
-    const avg = buffer.reduce((a, b) => a + b, 0) / buffer.length; 
-    const variance = buffer.map(x => Math.pow(x - avg, 2)).reduce((a, b) => a + b) / buffer.length; 
-    if (variance > 120 && db > 70) return 'صراخ/مفاجئ';  
-    if (db > 80) return 'آلات/مصنع'; 
-    if (db > 60 && variance < 40) return 'موسيقى/مستمر'; 
-    return 'ضجيج عام'; 
-  }; 
+ const analyzeSoundCategory = (db: number, buffer: number[]) => { 
+  // الكلام العادي غالباً بين 40-65، لذا سنرفع حد "الطبيعي" إلى 65
+  if (db < 65) return 'طبيعي (كلام أو هدوء)'; 
+  
+  const avg = buffer.reduce((a, b) => a + b, 0) / buffer.length; 
+  const variance = buffer.map(x => Math.pow(x - avg, 2)).reduce((a, b) => a + b) / buffer.length; 
+
+  // الضجيج المفاجئ (صراخ أو بوق سيارة حاد)
+  if (variance > 120 && db > 75) return 'صراخ/مفاجئ';  
+  
+  // ضجيج مستمر وعالي جداً (معدات ثقيلة أو زحمة سير خانقة)
+  if (db > 85) return 'ضجيج آلات/زحمة'; 
+  
+  // موسيقى صاخبة (تتميز بأن التباين فيها قليل لأن الإيقاع مستمر)
+  if (db > 70 && variance < 40) return 'موسيقى صاخبة'; 
+
+  return 'ضجيج عام'; 
+};
  
   const cleanupRecording = async () => { 
     if (intervalRef.current) { 
@@ -232,70 +241,76 @@ export default function HomeScreen() {
     } 
   }; 
  
-  const readNoiseLevel = async () => { 
+ const readNoiseLevel = async () => { 
     if (isProcessingRef.current) return; 
+    
+    // التأكد من أن التسجيل يعمل
     if (!recordingRef.current || !isRecordingActive.current) { 
       await startRecording(); 
       return; 
     } 
+    
     isProcessingRef.current = true; 
     try { 
       const status = await recordingRef.current.getStatusAsync(); 
       if (status.metering !== undefined) { 
+        // تحويل القيمة إلى ديسيبل (0-100)
         let currentDb = Math.floor((status.metering + 160) / 1.6); 
         currentDb = Math.min(100, Math.max(0, currentDb)); 
+        
         setDb(currentDb); 
         lastNoiseReading.current = currentDb; 
- 
-        // ✅ FIX 2: إشعار popup مع cooldown — مرة كل 30 ثانية فقط 
-        const nowTime = Date.now(); 
-        if (currentDb > 75 && nowTime - lastNotificationTimeRef.current > NOTIFICATION_COOLDOWN) { 
-          lastNotificationTimeRef.current = nowTime; 
-          await Notifications.scheduleNotificationAsync({ 
-            content: { 
-              title: "🚨 تنبيه: ضجيج مرتفع!", 
-              body: `تجاوز المكان الحد المسموح به للضجيج (${currentDb} dB). يرجى الحذر على سلامة أذنيك.`, 
-              sound: true, 
-              priority: Notifications.AndroidNotificationPriority.MAX, 
-              channelId: 'noise_alerts', 
-            }, 
-            trigger: null, 
-          }); 
-        } 
- 
-        if (currentDb > 70 && !isMuteModeRef.current && !isAlarmPlaying.current) { 
-          triggerAlarm(currentDb); 
-        } 
- 
-        if (currentDb > BATTERY_SAFE_SETTINGS.MIN_DB_TO_ACCELERATE) { 
-          consecutiveHighNoise.current++; 
-        } else { 
-          consecutiveHighNoise.current = Math.max(0, consecutiveHighNoise.current - 1); 
-        } 
- 
+
+        // 1. تحليل ميزات الصوت وتصنيفه (كلام، صراخ، موسيقى، إلخ)
         const features = getAudioFeatures(status.metering); 
         const category = analyzeSoundCategory(currentDb, features); 
-        setNoiseCategory(category); 
- 
-        // ✅ FIX 3: استخدام الـ token المحفوظ بدل ما نطلبه كل مرة 
+        setNoiseCategory(category);
+
+        const nowTime = Date.now(); 
+
+        // ✅ الفلترة الذكية للإشعارات المنبثقة (Popup)
+        // الشرط: (الديسيبل >= 80) وَ (ليس كلاماً عادياً) وَ (مرور 30 ثانية على آخر إشعار)
+        if (currentDb >= 80 && 
+            category !== 'طبيعي (كلام أو هدوء)' && 
+            nowTime - lastNotificationTimeRef.current > NOTIFICATION_COOLDOWN) { 
+            
+            lastNotificationTimeRef.current = nowTime; 
+            
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title: "🚨 تنبيه: ضجيج مرتفع مكتشف!",
+                body: `تم رصد (${category}) بمستوى ${currentDb} dB. يرجى الحذر.`,
+                sound: true,
+                priority: Notifications.AndroidNotificationPriority.MAX,
+              },
+              trigger: {
+                channelId: 'noise_alerts',
+              } as Notifications.NotificationTriggerInput, 
+            });
+        } 
+
+        // 2. التحكم في الإنذار الصوتي والاهتزاز (Vibration & Speech)
+        // لا يعمل الإنذار إلا إذا كان الصوت "ضجيجاً حقيقياً" وفوق الـ 80
+        if (currentDb >= 80 && category !== 'طبيعي (كلام أو هدوء)' && !isMuteModeRef.current && !isAlarmPlaying.current) { 
+          triggerAlarm(currentDb); 
+        } 
+
+        // 3. إدارة سرعة القياس لتوفير البطارية
+        adjustRecordingInterval(currentDb);
+
+        // 4. إرسال البيانات للسيرفر لتحديث الخريطة الحرارية
         if (locationRef.current) { 
           fetch(`${SERVER_URL}/api/analyze-audio`, { 
             method: 'POST', 
-            headers: {  
-             'Content-Type': 'application/json', 
- 
-            }, 
+            headers: { 'Content-Type': 'application/json' }, 
             body: JSON.stringify({ 
-              location: {  
-                lat: locationRef.current.coords.latitude,  
-                lng: locationRef.current.coords.longitude  
-              }, 
+              location: { lat: locationRef.current.coords.latitude, lng: locationRef.current.coords.longitude }, 
               noiseLevel: currentDb, 
               audioFeatures: features, 
-              isMuted: isMuteModeRef.current, 
+              category: category,
               pushToken: pushTokenRef.current, 
             }) 
-          }).catch(err => console.log('❌ فشل الإرسال:', err)); 
+          }).catch(err => console.log('❌ Server Update Failed:', err)); 
         } 
       } 
     } catch (err) { 
@@ -303,7 +318,8 @@ export default function HomeScreen() {
     } finally { 
       isProcessingRef.current = false; 
     } 
-  }; 
+  };
+  
  
   const adjustRecordingInterval = (currentDb: number) => { 
     const newInterval = getDynamicInterval(currentDb, consecutiveHighNoise.current); 
@@ -338,21 +354,44 @@ export default function HomeScreen() {
     } 
   }; 
  
-  const sendPushNotificationToServer = async (dbLevel: number, coords: any, address: string) => { 
-    try { 
-      await fetch(`${SERVER_URL}/api/send-notification`, { 
-        method: 'POST', 
-       headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ 
-          title: '⚠️ إنذار تلوث سمعي', 
-          body: `تم رصد ضوضاء (${noiseCategory}) بمستوى ${dbLevel} dB في ${address || 'منطقتك'}`, 
-          data: { type: 'NOISE_ALERT', lat: coords.latitude, lng: coords.longitude, noiseLevel: dbLevel } 
-        }), 
-      }); 
-    } catch (error) { 
-      console.log('❌ فشل إرسال الإشعار:', error); 
-    } 
-  }; 
+const sendPushNotificationToServer = async (dbLevel: number, coords: any, address: string) => { 
+  try { 
+    // أولاً: إرسال البيانات للسيرفر ليقوم بتوزيع الإشعارات للأجهزة القريبة
+    await fetch(`${SERVER_URL}/api/send-notification`, { 
+      method: 'POST', 
+      headers: { 'Content-Type': 'application/json' }, 
+      body: JSON.stringify({ 
+        title: '🤫 يرجى الهدوء في منطقتك', 
+        body: `تم رصد ضجيج مرتفع (${dbLevel} dB) في ${address || 'هذا الموقع'}. يرجى خفض الصوت لراحة الجميع.`, 
+        data: { 
+          type: 'NOISE_ALERT', 
+          lat: coords.latitude, 
+          lng: coords.longitude, 
+          noiseLevel: dbLevel,
+          category: noiseCategory
+        } 
+      }), 
+    });
+
+    // ثانياً: إظهار إشعار فوري (Popup) على جهاز المستخدم نفسه
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '⚠️ إنذار تلوث سمعي',
+        body: `تم رصد ضوضاء (${noiseCategory}) بمستوى ${dbLevel} dB في ${address || 'منطقتك'}`,
+        data: { type: 'LOCAL_ALERT', noiseLevel: dbLevel },
+        sound: true,
+        priority: Notifications.AndroidNotificationPriority.MAX,
+        // ✅ محذوف من هنا لتجنب خطأ TS2353
+      },
+      trigger: {
+        channelId: 'noise_alerts', // ✅ مضاف هنا بشكل سليم تقنياً
+      } as Notifications.NotificationTriggerInput,
+    });
+
+  } catch (error) { 
+    console.log('❌ فشل إرسال أو عرض الإشعار:', error); 
+  } 
+};
  
   const triggerAlarm = async (currentDb: number) => { 
     if (isMuteModeRef.current || isAlarmPlaying.current) return; 
@@ -360,6 +399,10 @@ export default function HomeScreen() {
     const now = Date.now(); 
     if (now - lastAlertTimeRef.current < ALERT_COOLDOWN) return; 
  
+    // إضافة فلترة إضافية هنا:
+  // لا تشغل الإنذار الصوتي إلا إذا كان الضجيج فعلاً مزعجاً (فوق 80 ديسيبل)
+  if (currentDb < 80) return;
+
     isAlarmPlaying.current = true; 
     setShowAlertModal(true); 
  
@@ -421,8 +464,8 @@ export default function HomeScreen() {
   }; 
 const activateMagicWand = async () => { 
   setIsAiLoading(true); 
-  startPulse(); // بدء أنيميشن النبض فوراً 
- 
+  startPulse(); // بدء أنيميشن النبض
+
   try { 
     const response = await fetch(`${SERVER_URL}/api/magic-wand`, { 
       method: 'POST', 
@@ -430,28 +473,32 @@ const activateMagicWand = async () => {
       body: JSON.stringify({ 
         latitude: location?.coords.latitude, 
         longitude: location?.coords.longitude, 
-        maxDistance: maxDistance, // الخطوة الأهم: إرسال المسافة المختارة للسيرفر 
+        maxDistance: maxDistance, 
       }), 
     }); 
- 
+
     const data = await response.json(); 
- 
+
     if (data.success && data.bestRoute) { 
       const bestLocation = { lat: data.bestRoute.location.lat, lng: data.bestRoute.location.lng }; 
       setBestPlaceCoords(bestLocation); 
-       
+        
+      // تحريك الخريطة للموقع المكتشف
       mapRef.current?.animateToRegion({ 
         latitude: bestLocation.lat, 
         longitude: bestLocation.lng, 
         latitudeDelta: 0.005, 
         longitudeDelta: 0.005, 
       }, 1500); 
- 
+
+      // ✅ التعديل هنا: إظهار التنبيه بكل البيانات التي طلبتِها
       Alert.alert( 
-        "🪄 أهدأ منطقة بالقرب منك", 
-        `📍 المكان: ${data.bestRoute.name || 'غير معروف'} 
-📊 الضجيج: ${data.bestRoute.noiseLevel} dB 
-📏 المسافة: ${data.bestRoute.distance.toFixed(1)} كم`, 
+        "✨ نتيجة العصا السحرية", 
+        `📍 المكان: ${data.bestRoute.name}\n` +
+        `🔊 الضجيج: ${data.bestRoute.noiseLevel} dB\n` +
+        `📏 المسافة: ${data.bestRoute.distance} كم\n` +
+        `📅 ${data.bestRoute.observedIn}\n` +
+        `🕒 ${data.bestRoute.time}`,
         [{ text: "حسناً" }] 
       ); 
     } else { 
@@ -461,10 +508,9 @@ const activateMagicWand = async () => {
     Alert.alert('خطأ', 'تعذر الاتصال بالسيرفر.'); 
   } finally { 
     setIsAiLoading(false); 
-    pulseAnim.setValue(1); // إيقاف النبض بعد انتهاء التحميل 
+    pulseAnim.setValue(1); // إيقاف النبض
   } 
-}; 
- 
+};
   async function registerForPushNotifications() { 
     if (!Device.isDevice) return null; 
     // ✅ FIX 3: إنشاء الـ channels هنا لضمان انتظار التنفيذ (Await)
