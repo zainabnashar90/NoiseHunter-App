@@ -15,7 +15,12 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.gold.noise.app",
       "infoPlist": {
-        "UIBackgroundModes": ["audio", "location", "fetch", "remote-notification"],
+        "UIBackgroundModes": [
+          "audio",
+          "location",
+          "fetch",
+          "remote-notification"
+        ],
         "NSMicrophoneUsageDescription": "نحتاج للوصول إلى الميكروفون لرصد مستويات الضوضاء"
       }
     },
@@ -53,8 +58,8 @@
         {
           "locationAlwaysPermission": "نحتاج للوصول لموقعك لرسم خريطة الضوضاء حتى عند إغلاق التطبيق."
         }
-      ]
- 
+      ],
+      "expo-web-browser"
     ],
     "extra": {
       "eas": {
