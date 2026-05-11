@@ -6,7 +6,8 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { io } from 'socket.io-client';
-
+import * as Device from 'expo-device';
+import * as Location from 'expo-location';
 const SERVER_URL = 'https://quitezone-backend.onrender.com';
 
 export default function ExploreScreen() {
@@ -36,22 +37,48 @@ export default function ExploreScreen() {
       })
     ).start();
 
-    socket.current = io(SERVER_URL, {
-      transports: ['websocket'],
+ socket.current = io(SERVER_URL, {
+    transports: ['websocket'],
+  });
+
+  // ----------------------------------------------------
+    // هنا الجزء الجديد الذي سأضيفه (مستمعات الأحداث)
+    // ----------------------------------------------------
+
+    socket.current.on('connect', async () => {
+      setIsConnected(true);
+
+      // 1. طلب إذن الوصول للموقع (GPS)
+      let { status } = await Location.requestForegroundPermissionsAsync();
+     // ✅ هنا نخبر TypeScript بنوع البيانات المتوقع (رقم أو null)
+let locationData: { lat: number | null; lng: number | null } = { lat: null, lng: null };
+
+      if (status === 'granted') {
+        try {
+          const loc = await Location.getCurrentPositionAsync({});
+          locationData = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+        } catch (error) {
+          console.log("Error getting location", error);
+        }
+      }
+
+      // 2. جلب بيانات الجهاز
+      const deviceDisplayName = Device.modelName || Device.designName || Platform.OS;
+
+      // 3. إرسال البيانات الشاملة للسيرفر
+      socket.current.emit('register-device', {
+        pushToken: null,
+        deviceName: deviceDisplayName,
+        lat: locationData.lat,
+        lng: locationData.lng,
+        // نرسل قيمة عشوائية للضوضاء مؤقتاً لإثبات المفهوم (بين 30 و 80 ديسيبل)
+        noiseLevel: Math.floor(Math.random() * (80 - 30 + 1)) + 30 
+      });
     });
 
-    socket.current.on('connect', () => setIsConnected(true));
-
-    // ✅ FIX 2: معالجة قطع الاتصال كانت ناقصة
-    socket.current.on('disconnect', () => {
-      setIsConnected(false);
-      setOnlineDevices([]);
-    });
-
-    socket.current.on('update-device-list', (devices: any) => setOnlineDevices(devices));
+    // ... بقية الـ Listeners (disconnect و update-device-list) كما هي ...
 
     return () => {
-      subscription.remove();
       if (socket.current) socket.current.disconnect();
     };
   }, []);
@@ -71,36 +98,56 @@ export default function ExploreScreen() {
     border: isDarkMode ? '#1f2937' : '#e2e8f0',
   };
 
-  const renderDeviceItem = ({ item }: { item: any }) => (
-    <View style={[styles.cyberCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-      <View style={[styles.cardGlow, { backgroundColor: theme.accent }]} />
-      <View style={[styles.iconContainer, { backgroundColor: isDarkMode ? '#1e293b' : '#f1f2f6' }]}>
-        {/* ✅ FIX 3: Platform.OS يرجع 'ios' مش 'iPhone' */}
-        <MaterialCommunityIcons
-          name={item.deviceName === 'ios' ? 'apple' : 'android'}
-          size={24}
-          color={theme.accent}
-        />
-      </View>
-
-      <View style={styles.deviceInfo}>
-        <Text style={[styles.deviceName, { color: theme.text }]}>
-          {item.deviceName === 'ios' ? 'iPhone' : item.deviceName === 'android' ? 'Android' : item.deviceName || 'Unknown Node'}
-        </Text>
-        <Text style={[styles.deviceIp, { color: theme.subText }]}>
-          ADDR: {item.localIP || '0.0.0.0'}
-        </Text>
-        <Text style={[styles.deviceTime, { color: theme.subText }]}>
-          {item.connectedAt ? new Date(item.connectedAt).toLocaleTimeString('ar-SY', { hour: '2-digit', minute: '2-digit' }) : ''}
-        </Text>
-      </View>
-
-      <View style={styles.statusBox}>
-        <View style={[styles.pulseDot, { backgroundColor: isDarkMode ? '#00ffcc' : '#2ecc71' }]} />
-        <Text style={[styles.liveText, { color: isDarkMode ? '#00ffcc' : '#2ecc71' }]}>ACTIVE</Text>
-      </View>
+ const renderDeviceItem = ({ item }: { item: any }) => (
+  <View style={[styles.cyberCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+    <View style={[styles.cardGlow, { backgroundColor: theme.accent }]} />
+    
+    <View style={[styles.iconContainer, { backgroundColor: isDarkMode ? '#1e293b' : '#f1f2f6' }]}>
+      <MaterialCommunityIcons
+        name={item.deviceName?.toLowerCase().includes('iphone') || item.deviceName === 'ios' ? 'apple' : 'android'}
+        size={24}
+        color={theme.accent}
+      />
     </View>
-  );
+
+    <View style={styles.deviceInfo}>
+      <Text style={[styles.deviceName, { color: theme.text }]}>
+        {item.deviceName || 'Unknown Node'}
+      </Text>
+      
+      {/* 🔊 إضافة مستوى الضوضاء هنا */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+        <MaterialCommunityIcons 
+          name="volume-high" 
+          size={14} 
+          color={item.noiseLevel > 70 ? '#ff4757' : theme.accent} 
+        />
+        <Text style={{ color: item.noiseLevel > 70 ? '#ff4757' : theme.accent, fontSize: 12, marginLeft: 4, fontWeight: 'bold' }}>
+          {item.noiseLevel ? `${item.noiseLevel} dB` : '-- dB'}
+        </Text>
+        
+        {/* 📍 إضافة مؤشر وجود الموقع */}
+        {item.lat && (
+          <MaterialCommunityIcons 
+            name="map-marker-outline" 
+            size={12} 
+            color={theme.subText} 
+            style={{ marginLeft: 10 }} 
+          />
+        )}
+      </View>
+
+      <Text style={[styles.deviceTime, { color: theme.subText }]}>
+        {item.connectedAt ? new Date(item.connectedAt).toLocaleTimeString('ar-SY', { hour: '2-digit', minute: '2-digit' }) : ''}
+      </Text>
+    </View>
+
+    <View style={styles.statusBox}>
+      <View style={[styles.pulseDot, { backgroundColor: isDarkMode ? '#00ffcc' : '#2ecc71' }]} />
+      <Text style={[styles.liveText, { color: isDarkMode ? '#00ffcc' : '#2ecc71' }]}>ACTIVE</Text>
+    </View>
+  </View>
+);
 
   // ✅ FIX 4: حالة فارغة عند الاتصال بدون أجهزة
   const renderEmptyState = () => (

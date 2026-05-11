@@ -51,7 +51,9 @@
         "expo-notifications",
         {
           "icon": "./assets/images/adaptive-icon.png",
-          "color": "#00FFCC"
+          "color": "#00FFCC",
+          "androidMode": "default", 
+         "androidCollapsedTitle": "لديك تنبيهات ضجيج جديدة"
         }
       ],
       [
