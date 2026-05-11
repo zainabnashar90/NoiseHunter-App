@@ -88,10 +88,13 @@ export default function HomeScreen() {
   const registerDeviceWithServer = async (token: string | null) => {
     if (socket.current && socket.current.connected) {
       const ip = await Network.getIpAddressAsync();
+      const loc = locationRef.current;
       socket.current.emit('register-device', {
         deviceName: Platform.OS,
         localIP: ip,
-        pushToken: token
+        pushToken: token,
+        lat: loc?.coords.latitude ?? null,
+        lng: loc?.coords.longitude ?? null,
       });
     }
   };
@@ -356,24 +359,8 @@ export default function HomeScreen() {
  
 const sendPushNotificationToServer = async (dbLevel: number, coords: any, address: string) => { 
   try { 
-    // أولاً: إرسال البيانات للسيرفر ليقوم بتوزيع الإشعارات للأجهزة القريبة
-    await fetch(`${SERVER_URL}/api/send-notification`, { 
-      method: 'POST', 
-      headers: { 'Content-Type': 'application/json' }, 
-      body: JSON.stringify({ 
-        title: '🤫 يرجى الهدوء في منطقتك', 
-        body: `تم رصد ضجيج مرتفع (${dbLevel} dB) في ${address || 'هذا الموقع'}. يرجى خفض الصوت لراحة الجميع.`, 
-        data: { 
-          type: 'NOISE_ALERT', 
-          lat: coords.latitude, 
-          lng: coords.longitude, 
-          noiseLevel: dbLevel,
-          category: noiseCategory
-        } 
-      }), 
-    });
-
-    // ثانياً: إظهار إشعار فوري (Popup) على جهاز المستخدم نفسه
+   // إظهار إشعار فوري (Popup) على جهاز المستخدم
+    // البث للأجهزة القريبة يتم تلقائياً عبر /api/analyze-audio
     await Notifications.scheduleNotificationAsync({
       content: {
         title: '⚠️ إنذار تلوث سمعي',
@@ -381,13 +368,27 @@ const sendPushNotificationToServer = async (dbLevel: number, coords: any, addres
         data: { type: 'LOCAL_ALERT', noiseLevel: dbLevel },
         sound: true,
         priority: Notifications.AndroidNotificationPriority.MAX,
-        // ✅ محذوف من هنا لتجنب خطأ TS2353
+       
       },
       trigger: {
-        channelId: 'noise_alerts', // ✅ مضاف هنا بشكل سليم تقنياً
+         channelId: 'noise_alerts',
       } as Notifications.NotificationTriggerInput,
+      
     });
-
+         // إشعار السيرفر ليبث للأجهزة القريبة المغلقة
+    if (pushTokenRef.current) {
+      fetch(`${SERVER_URL}/api/broadcast-alert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pushToken: pushTokenRef.current,
+          noiseLevel: dbLevel,
+          lat: coords.latitude,
+          lng: coords.longitude,
+          category: noiseCategory,
+        }),
+      }).catch(() => {});
+    }
   } catch (error) { 
     console.log('❌ فشل إرسال أو عرض الإشعار:', error); 
   } 
@@ -619,6 +620,14 @@ useEffect(() => {
         }, (newLoc) => { 
           setLocation(newLoc); 
           locationRef.current = newLoc; 
+        AsyncStorage.setItem('lastLocation', JSON.stringify(newLoc)).catch(() => {}); 
+          if (socket.current && socket.current.connected && pushTokenRef.current) { 
+            socket.current.emit('update-location', { 
+              pushToken: pushTokenRef.current, 
+              lat: newLoc.coords.latitude, 
+              lng: newLoc.coords.longitude, 
+            }); 
+          } 
         }); 
  
         // د- تفعيل خدمة الخلفية (Background) لضمان عدم توقف الميكروفون 
@@ -760,23 +769,33 @@ useEffect(() => {
             {/* أزرار اختيار المسافة */} 
             {!isAiLoading && ( 
               <View style={styles.selectionRow}> 
-                <TouchableOpacity  
-                  style={[styles.miniModeCard, maxDistance === 2 && {backgroundColor: '#4CAF50'}]} 
-                  onPress={() => { setMaxDistance(2); animateSelection('walk'); }} 
-                > 
-                  <Animated.View style={{ transform: [{ scale: walkScale }] }}> 
-                    <MaterialCommunityIcons name="walk" size={24} color={maxDistance === 2 ? "#fff" : "#4CAF50"} /> 
-                  </Animated.View> 
-                </TouchableOpacity> 
- 
-                <TouchableOpacity  
-                  style={[styles.miniModeCard, maxDistance === 15 && {backgroundColor: '#03A9F4'}]} 
-                  onPress={() => { setMaxDistance(15); animateSelection('car'); }} 
-                > 
-                  <Animated.View style={{ transform: [{ scale: carScale }] }}> 
-                    <MaterialCommunityIcons name="car" size={24} color={maxDistance === 15 ? "#fff" : "#03A9F4"} /> 
-                  </Animated.View> 
-                </TouchableOpacity> 
+             {/* 1. زر المشي (Walk) */}
+<TouchableOpacity  
+  style={[
+    styles.miniModeCard, 
+    { backgroundColor: isDarkMode ? '#151B23' : '#FFFFFF' }, // 👈 هذا هو السطر الجديد اللي ضفناه
+    maxDistance === 2 && { backgroundColor: '#4CAF50' } 
+  ]} 
+  onPress={() => { setMaxDistance(2); animateSelection('walk'); }} 
+> 
+  <Animated.View style={{ transform: [{ scale: walkScale }] }}> 
+    <MaterialCommunityIcons name="walk" size={24} color={maxDistance === 2 ? "#fff" : "#4CAF50"} /> 
+  </Animated.View> 
+</TouchableOpacity> 
+
+{/* 2. زر السيارة (Car) */}
+<TouchableOpacity  
+  style={[
+    styles.miniModeCard, 
+    { backgroundColor: isDarkMode ? '#151B23' : '#FFFFFF' }, // 👈 ونفس السطر ضفناه هون كمان
+    maxDistance === 15 && { backgroundColor: '#03A9F4' }
+  ]} 
+  onPress={() => { setMaxDistance(15); animateSelection('car'); }} 
+>    
+  <Animated.View style={{ transform: [{ scale: carScale }] }}> 
+    <MaterialCommunityIcons name="car" size={24} color={maxDistance === 15 ? "#fff" : "#03A9F4"} /> 
+  </Animated.View> 
+</TouchableOpacity>
               </View> 
             )} 
  
@@ -832,15 +851,28 @@ const styles = StyleSheet.create({
   dbText: { fontSize: 60, fontWeight: '900' }, 
   aiButton: { width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center', elevation: 15 }, 
   modalBackground: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center' }, 
-  alertBox: { width: '85%', borderRadius: 30, padding: 30, alignItems: 'center', borderWidth: 1, borderColor: '#e74c3c' }, 
+  alertBox: { 
+    width: '85%', 
+    borderRadius: 30, 
+    padding: 30, 
+    alignItems: 'center', 
+    borderWidth: 1, 
+    borderColor: '#e74c3c',
+    shadowColor: "#e74c3c", // توهج أحمر عند التنبيه
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 15,
+    elevation: 10
+},
   alertTitle: { fontSize: 22, fontWeight: 'bold', marginTop: 15 }, 
   alertSub: { fontSize: 15, textAlign: 'center', marginTop: 10, marginBottom: 25 }, 
   stopBtn: { backgroundColor: '#e74c3c', paddingVertical: 15, borderRadius: 20, width: '100%', alignItems: 'center' }, 
   stopBtnText: { color: 'white', fontWeight: 'bold', fontSize: 18 }, 
   magicContainer: { position: 'absolute', bottom: 40, right: 25, alignItems: 'center' }, 
   selectionRow: { flexDirection: 'column', gap: 10, marginBottom: 15 }, 
-  miniModeCard: {  
-    width: 50, height: 50, borderRadius: 25, backgroundColor: '#fff',  
+miniModeCard: {  
+    width: 50, height: 50, borderRadius: 25, 
     justifyContent: 'center', alignItems: 'center', elevation: 8, 
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2} 
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2
+  }
 }); 
