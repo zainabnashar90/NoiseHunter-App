@@ -6,6 +6,7 @@ import * as Location from 'expo-location';
 import * as Network from 'expo-network'; 
 import * as Speech from 'expo-speech'; 
 import React, { useEffect, useRef, useState } from 'react'; 
+import { registerBackgroundNoiseCheck } from '../../background-tasks';
 import { 
   ActivityIndicator, 
   Alert, 
@@ -577,10 +578,13 @@ useEffect(() => {
       // أ- تسجيل توكن الإشعارات 
       const token = await registerForPushNotifications(); 
       pushTokenRef.current = token; 
-      if (token && socket.current && socket.current.connected) {
-        registerDeviceWithServer(token);
+    if (token) {
+        AsyncStorage.setItem('pushToken', token).catch(() => {});
+        if (socket.current && socket.current.connected) {
+          registerDeviceWithServer(token);
+        }
       }
- 
+      await registerBackgroundNoiseCheck();
       // ب- طلب صلاحيات الموقع (الأمامي) 
       let { status } = await Location.requestForegroundPermissionsAsync(); 
       if (status !== 'granted') return; 
@@ -590,7 +594,7 @@ useEffect(() => {
         let loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }); 
         setLocation(loc); 
         locationRef.current = loc; 
- 
+        AsyncStorage.setItem('lastLocation', JSON.stringify(loc)).catch(() => {}); 
         locationWatcher.current = await Location.watchPositionAsync({ 
           accuracy: Location.Accuracy.Balanced,  
           distanceInterval: BATTERY_SAFE_SETTINGS.LOCATION_DISTANCE_INTERVAL, 

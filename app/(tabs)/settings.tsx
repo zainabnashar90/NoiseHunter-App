@@ -329,7 +329,7 @@ export default function SettingsScreen() {
       </TouchableOpacity>
 
       <Text style={[styles.copy, { color: theme.subText }]}>
-        © 2026 Zainab Nashar. {t('rights')}
+        © 2026 . {t('rights')}
       </Text>
     </ScrollView>
   );
