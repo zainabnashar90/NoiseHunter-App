@@ -48,10 +48,9 @@ export default function ExploreScreen() {
     socket.current.on('connect', async () => {
       setIsConnected(true);
 
-      // 1. طلب إذن الوصول للموقع (GPS)
+      
       let { status } = await Location.requestForegroundPermissionsAsync();
-     // ✅ هنا نخبر TypeScript بنوع البيانات المتوقع (رقم أو null)
-let locationData: { lat: number | null; lng: number | null } = { lat: null, lng: null };
+    let locationData: { lat: number | null; lng: number | null } = { lat: null, lng: null };
 
       if (status === 'granted') {
         try {
@@ -62,22 +61,25 @@ let locationData: { lat: number | null; lng: number | null } = { lat: null, lng:
         }
       }
 
-      // 2. جلب بيانات الجهاز
+     
       const deviceDisplayName = Device.modelName || Device.designName || Platform.OS;
 
-      // 3. إرسال البيانات الشاملة للسيرفر
       socket.current.emit('register-device', {
         pushToken: null,
         deviceName: deviceDisplayName,
         lat: locationData.lat,
         lng: locationData.lng,
-        // نرسل قيمة عشوائية للضوضاء مؤقتاً لإثبات المفهوم (بين 30 و 80 ديسيبل)
-        noiseLevel: Math.floor(Math.random() * (80 - 30 + 1)) + 30 
+       noiseLevel: 0
       });
     });
 
-    // ... بقية الـ Listeners (disconnect و update-device-list) كما هي ...
-
+    socket.current.on('update-device-list', (devices: any[]) => {
+      setOnlineDevices(devices);
+    });
+    socket.current.on('disconnect', () => {
+      setIsConnected(false);
+      setOnlineDevices([]);
+    });
     return () => {
       if (socket.current) socket.current.disconnect();
     };

@@ -269,28 +269,6 @@ export default function HomeScreen() {
         const category = analyzeSoundCategory(currentDb, features); 
         setNoiseCategory(category);
 
-        const nowTime = Date.now(); 
-
-        // ✅ الفلترة الذكية للإشعارات المنبثقة (Popup)
-        // الشرط: (الديسيبل >= 80) وَ (ليس كلاماً عادياً) وَ (مرور 30 ثانية على آخر إشعار)
-        if (currentDb >= 80 && 
-            category !== 'طبيعي (كلام أو هدوء)' && 
-            nowTime - lastNotificationTimeRef.current > NOTIFICATION_COOLDOWN) { 
-            
-            lastNotificationTimeRef.current = nowTime; 
-            
-            await Notifications.scheduleNotificationAsync({
-              content: {
-                title: "🚨 تنبيه: ضجيج مرتفع مكتشف!",
-                body: `تم رصد (${category}) بمستوى ${currentDb} dB. يرجى الحذر.`,
-                sound: true,
-                priority: Notifications.AndroidNotificationPriority.MAX,
-              },
-              trigger: {
-                channelId: 'noise_alerts',
-              } as Notifications.NotificationTriggerInput, 
-            });
-        } 
 
         // 2. التحكم في الإنذار الصوتي والاهتزاز (Vibration & Speech)
         // لا يعمل الإنذار إلا إذا كان الصوت "ضجيجاً حقيقياً" وفوق الـ 80
