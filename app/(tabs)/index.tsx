@@ -1,3 +1,4 @@
+import DeviceInfo from 'react-native-device-info';
 import { MaterialCommunityIcons } from '@expo/vector-icons'; 
 import AsyncStorage from '@react-native-async-storage/async-storage'; 
 import { Audio } from 'expo-av'; 
@@ -102,21 +103,27 @@ export default function HomeScreen() {
   const [isDarkMode, setIsDarkMode] = useState(true); 
 
  const registerDeviceWithServer = async (token: string | null) => {
-  // التأكد أن السوكيت متصل والتوكن موجود
-  if (socket.current && socket.current.connected && token) {
-    const ip = await Network.getIpAddressAsync();
-    const loc = locationRef.current; // استخدام المرجع للحصول على آخر موقع تم رصده
+    // التأكد أن السوكيت متصل والتوكن موجود
+    if (socket.current && socket.current.connected && token) {
+      try {
+        // جلب الاسم "الحقيقي" للجهاز
+        const realDeviceName = await DeviceInfo.getDeviceName(); 
+        const ip = await Network.getIpAddressAsync();
+        const loc = locationRef.current; 
 
-    socket.current.emit('register-device', {
-      deviceName: Platform.OS + " (" + Device.modelName + ")", // سيعطيكِ مثلاً Android (Galaxy S21)
-      pushToken: token, 
-      localIP: ip,
-      lat: loc?.coords?.latitude || null,
-      lng: loc?.coords?.longitude || null,
-    });
-    console.log("🚀 تم إرسال بيانات الجهاز للسيرفر بنجاح!");
-  }
-};
+        socket.current.emit('register-device', {
+          deviceName: realDeviceName, // سيظهر الآن مثلاً: "Samsung Galaxy S21"
+          pushToken: token, 
+          localIP: ip,
+          lat: loc?.coords?.latitude || null,
+          lng: loc?.coords?.longitude || null,
+        });
+        console.log("🚀 تم التسجيل باسم الجهاز الحقيقي:", realDeviceName);
+      } catch (error) {
+        console.error("❌ فشل جلب اسم الجهاز:", error);
+      }
+    }
+  };
   const [bestPlaceCoords, setBestPlaceCoords] = useState<{ lat: number; lng: number } | null>(null); 
   const [isMuteMode, setIsMuteMode] = useState(false); 
    
