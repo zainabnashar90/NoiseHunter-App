@@ -86,19 +86,22 @@ export default function HomeScreen() {
   const [onlineDevices, setOnlineDevices] = useState([]); 
   const [isDarkMode, setIsDarkMode] = useState(true); 
 
-  const registerDeviceWithServer = async (token: string | null) => {
-    if (socket.current && socket.current.connected) {
-      const ip = await Network.getIpAddressAsync();
-      const loc = locationRef.current;
-      socket.current.emit('register-device', {
-        deviceName: Platform.OS,
-        localIP: ip,
-        pushToken: token,
-        lat: loc?.coords.latitude ?? null,
-        lng: loc?.coords.longitude ?? null,
-      });
-    }
-  };
+ const registerDeviceWithServer = async (token: string | null) => {
+  // التأكد أن السوكيت متصل والتوكن موجود
+  if (socket.current && socket.current.connected && token) {
+    const ip = await Network.getIpAddressAsync();
+    const loc = locationRef.current; // استخدام المرجع للحصول على آخر موقع تم رصده
+
+    socket.current.emit('register-device', {
+      deviceName: Platform.OS + " (" + Device.modelName + ")", // سيعطيكِ مثلاً Android (Galaxy S21)
+      pushToken: token, 
+      localIP: ip,
+      lat: loc?.coords?.latitude || null,
+      lng: loc?.coords?.longitude || null,
+    });
+    console.log("🚀 تم إرسال بيانات الجهاز للسيرفر بنجاح!");
+  }
+};
   const [bestPlaceCoords, setBestPlaceCoords] = useState<{ lat: number; lng: number } | null>(null); 
   const [isMuteMode, setIsMuteMode] = useState(false); 
    
@@ -573,28 +576,35 @@ useEffect(() => {
  
     fetchHeatmapData(); 
  
-    // 4. إعداد الإشعارات والموقع والميكروفون (العمل الفعلي) 
-    (async () => { 
-      // أ- تسجيل توكن الإشعارات 
-      const token = await registerForPushNotifications(); 
-      pushTokenRef.current = token; 
-    if (token) {
-        AsyncStorage.setItem('pushToken', token).catch(() => {});
-        if (socket.current && socket.current.connected) {
-          registerDeviceWithServer(token);
-        }
+   // 4. إعداد الإشعارات والموقع والميكروفون (العمل الفعلي) 
+    (async () => {
+  try {
+    // أ- جلب التوكن أولاً
+    const token = await registerForPushNotifications();
+    pushTokenRef.current = token;
+
+    // ب- جلب الموقع
+    let { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') return;
+    let loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+    locationRef.current = loc;
+    setLocation(loc);
+
+    // ج- الربط مع السيرفر (الخطوة الأهم)
+    // نتحقق إذا كان السوكيت متصلاً، إذا لم يكن، دالة الـ on('connect') ستتولى الأمر لاحقاً
+    if (token && socket.current) {
+      if (socket.current.connected) {
+        console.log("🚀 إرسال مباشر: السوكيت متصل والتوكن جاهز");
+        registerDeviceWithServer(token);
+      } else {
+        // إذا لم يتصل بعد، ننتظر حدث الاتصال
+        socket.current.on('connect', () => {
+          console.log("🚀 إرسال متأخر: تم الاتصال الآن، جارٍ التسجيل...");
+          registerDeviceWithServer(token);});
       }
-      await registerBackgroundNoiseCheck();
-      // ب- طلب صلاحيات الموقع (الأمامي) 
-      let { status } = await Location.requestForegroundPermissionsAsync(); 
-      if (status !== 'granted') return; 
- 
-      try { 
-        // ج- الحصول على الموقع الحالي وتفعيل المراقب 
-        let loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }); 
-        setLocation(loc); 
-        locationRef.current = loc; 
-        AsyncStorage.setItem('lastLocation', JSON.stringify(loc)).catch(() => {}); 
+        }
+
+        // د- مراقب الموقع المستمر
         locationWatcher.current = await Location.watchPositionAsync({ 
           accuracy: Location.Accuracy.Balanced,  
           distanceInterval: BATTERY_SAFE_SETTINGS.LOCATION_DISTANCE_INTERVAL, 
@@ -602,7 +612,8 @@ useEffect(() => {
         }, (newLoc) => { 
           setLocation(newLoc); 
           locationRef.current = newLoc; 
-        AsyncStorage.setItem('lastLocation', JSON.stringify(newLoc)).catch(() => {}); 
+          AsyncStorage.setItem('lastLocation', JSON.stringify(newLoc)).catch(() => {}); 
+          
           if (socket.current && socket.current.connected && pushTokenRef.current) { 
             socket.current.emit('update-location', { 
               pushToken: pushTokenRef.current, 
@@ -611,8 +622,8 @@ useEffect(() => {
             }); 
           } 
         }); 
- 
-        // د- تفعيل خدمة الخلفية (Background) لضمان عدم توقف الميكروفون 
+
+        // هـ- تفعيل خدمة الخلفية (Background) 
         const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync(); 
         if (bgStatus === 'granted') { 
           await Location.startLocationUpdatesAsync(BACKGROUND_NOTIFICATION_TASK, { 
@@ -626,17 +637,17 @@ useEffect(() => {
             } 
           }); 
         } 
- 
-        // هـ- تشغيل الميكروفون والبدء بالقياس 
+
+        // و- تشغيل الميكروفون
         const success = await startRecording(); 
         if (success) { 
           intervalRef.current = setInterval(readNoiseLevel, BATTERY_SAFE_SETTINGS.NORMAL_INTERVAL); 
         } 
- 
+
       } catch (err) { 
         console.log("Initialization Error:", err); 
       } 
-    })(); 
+    })();
  
     // 5. دالة التنظيف (Cleanup) 
     return () => { 
