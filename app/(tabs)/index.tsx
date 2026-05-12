@@ -55,22 +55,37 @@ const BATTERY_SAFE_SETTINGS = {
   LOCATION_TIME_INTERVAL: 10000, 
 }; 
  
-TaskManager.defineTask(BACKGROUND_NOTIFICATION_TASK, async ({ data, error }) => { 
+TaskManager.defineTask(BACKGROUND_NOTIFICATION_TASK, async ({ data, error }: any) => { 
   if (error) { 
     console.error("Background task error:", error); 
     return; 
   } 
    
   if (data) { 
-    console.log('Received background data:', data); 
-    /**
-     * ملاحظة هامة للمطور:
-     * بيئة Expo القياسية لا تدعم قراءة الميكروفون (Audio Metering) في الخلفية عند إغلاق التطبيق تماماً.
-     * هذه المهمة تعمل حالياً للموقع فقط. لتشغيل تنبيهات الضجيج والتطبيق مغلق، يجب استخدام Remote Push Notifications
-     * من السيرفر، أو استخدام Native Modules متخصصة.
-     */
+    // الآن لن يعترض TypeScript لأننا استخدمنا : any أو قمنا بعمل Cast
+    const { locations } = data as { locations: Location.LocationObject[] }; 
+    
+    if (locations && locations.length > 0) {
+      const location = locations[0];
+      console.log('📍 تم التقاط موقع في الخلفية:', location.coords.latitude, location.coords.longitude);
+
+      try {
+        // إرسال الموقع للسيرفر
+        await fetch(`${SERVER_URL}/api/update-location`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            pushToken: await AsyncStorage.getItem('pushToken'),
+            lat: location.coords.latitude,
+            lng: location.coords.longitude,
+          }),
+        });
+      } catch (e) {
+        console.log("❌ فشل تحديث السيرفر من الخلفية");
+      }
+    }
   } 
-}); 
+});
 export default function HomeScreen() { 
   const [db, setDb] = useState(0); 
   const [noiseCategory, setNoiseCategory] = useState('طبيعي'); 
@@ -579,30 +594,35 @@ useEffect(() => {
    // 4. إعداد الإشعارات والموقع والميكروفون (العمل الفعلي) 
     (async () => {
   try {
-    // أ- جلب التوكن أولاً
+   // أ- جلب التوكن وحفظه للعمل في الخلفية
     const token = await registerForPushNotifications();
     pushTokenRef.current = token;
+    
+    // ✅ إضافة ضرورية: حفظ التوكن في التخزين الدائم لكي يراه الـ TaskManager والتطبيق مغلق
+    if (token) {
+      await AsyncStorage.setItem('pushToken', token);
+    }
 
-    // ب- جلب الموقع
+    // ب- جلب الموقع (كما هو في كودك)
     let { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') return;
     let loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
     locationRef.current = loc;
     setLocation(loc);
 
-    // ج- الربط مع السيرفر (الخطوة الأهم)
-    // نتحقق إذا كان السوكيت متصلاً، إذا لم يكن، دالة الـ on('connect') ستتولى الأمر لاحقاً
+    // ج- الربط مع السيرفر (كودك ممتاز ومنطقي جداً)
     if (token && socket.current) {
       if (socket.current.connected) {
         console.log("🚀 إرسال مباشر: السوكيت متصل والتوكن جاهز");
         registerDeviceWithServer(token);
       } else {
-        // إذا لم يتصل بعد، ننتظر حدث الاتصال
-        socket.current.on('connect', () => {
+       // استخدام once بدلاً من on لضمان التنفيذ مرة واحدة فقط عند أول اتصال
+        socket.current.once('connect', () => {
           console.log("🚀 إرسال متأخر: تم الاتصال الآن، جارٍ التسجيل...");
-          registerDeviceWithServer(token);});
+          registerDeviceWithServer(token);
+        });
       }
-        }
+    }
 
         // د- مراقب الموقع المستمر
         locationWatcher.current = await Location.watchPositionAsync({ 
