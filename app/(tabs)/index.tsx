@@ -405,7 +405,6 @@ const sendPushNotificationToServer = async (dbLevel: number, coords: any, addres
     if (now - lastAlertTimeRef.current < ALERT_COOLDOWN) return; 
  
     // إضافة فلترة إضافية هنا:
-  // لا تشغل الإنذار الصوتي إلا إذا كان الضجيج فعلاً مزعجاً (فوق 80 ديسيبل)
   if (currentDb < 80) return;
 
     isAlarmPlaying.current = true; 
@@ -896,3 +895,12 @@ miniModeCard: {
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2
   }
 }); 
+
+
+
+
+
+
+
+
+

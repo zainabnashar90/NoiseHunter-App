@@ -341,3 +341,5 @@ const styles = StyleSheet.create({
   historyDb: { fontSize: 15, fontWeight: 'bold' },
   emptyText: { textAlign: 'center', padding: 20, fontSize: 12 }
 });
+
+
